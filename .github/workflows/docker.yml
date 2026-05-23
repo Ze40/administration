@@ -70,6 +70,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Check SSH port
+        env:
+          SSH_HOST: ${{ secrets.DEPLOY_SSH_HOST }}
+          SSH_PORT: ${{ secrets.DEPLOY_SSH_PORT }}
+        run: |
+          timeout 10 bash -c "</dev/tcp/$SSH_HOST/$SSH_PORT"
+
       - name: Copy application to server
         uses: appleboy/scp-action@v0.1.7
         with:
