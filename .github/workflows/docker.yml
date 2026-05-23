@@ -2,43 +2,104 @@ name: docker
 
 on:
   push:
-    branches: [ "master" ]
+    branches: ["master"]
   pull_request:
-    branches: [ "master" ]
-
+    branches: ["master"]
   workflow_dispatch:
+
+env:
+  IMAGE_NAME: administration-app:test
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      ...
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t "$IMAGE_NAME" ./docker
+
+      - name: Save Docker image artifact
+        run: docker save "$IMAGE_NAME" | gzip > administration-app.tar.gz
+
+      - name: Upload Docker image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: administration-app-image
+          path: administration-app.tar.gz
+          retention-days: 1
 
   test:
     runs-on: ubuntu-latest
-    needs: [ build ]
-    container:
-      image: ...
-    services:
-      postgres:
-        image: postgres:latest
-        env:
-          POSTGRES_DB: kubsu
-          POSTGRES_PASSWORD: kubsu
-          POSTGRES_PORT: 5432
-          POSTGRES_USER: kubsu
-        ports:
-          - 5432:5432
+    needs: [build]
     steps:
-      ...
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download Docker image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: administration-app-image
+
+      - name: Load Docker image
+        run: gunzip -c administration-app.tar.gz | docker load
+
+      - name: Start PostgreSQL
+        env:
+          APP_IMAGE: ${{ env.IMAGE_NAME }}
+        run: docker compose -f docker/compose.yaml up -d postgres
+
+      - name: Run tests inside the built image
+        env:
+          APP_IMAGE: ${{ env.IMAGE_NAME }}
+          DATABASE_URL: postgresql+psycopg://kubsu:kubsu@postgres:5432/kubsu
+        run: docker compose -f docker/compose.yaml run --rm -e DATABASE_URL="$DATABASE_URL" app pytest tests -q
+
+      - name: Tear down CI containers
+        if: always()
+        run: docker compose -f docker/compose.yaml down -v
 
   deploy:
     runs-on: ubuntu-latest
-    needs: [ test ]
+    needs: [test]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     steps:
-      ...
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
- verify:
-   runs-on: ubuntu-latest
-   steps:
-     ...
+      - name: Copy application to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.DEPLOY_SSH_HOST }}
+          username: ${{ secrets.DEPLOY_SSH_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          source: "docker"
+          target: ${{ secrets.DEPLOY_PATH }}
+          overwrite: true
+          strip_components: 0
+
+      - name: Deploy on server
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_SSH_HOST }}
+          username: ${{ secrets.DEPLOY_SSH_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            set -eu
+            cd "${{ secrets.DEPLOY_PATH }}/docker"
+            export POSTGRES_DB="${{ secrets.POSTGRES_DB }}"
+            export POSTGRES_USER="${{ secrets.POSTGRES_USER }}"
+            export POSTGRES_PASSWORD="${{ secrets.POSTGRES_PASSWORD }}"
+            export APP_PORT="${{ secrets.APP_PORT }}"
+            docker compose up -d --build --remove-orphans
+
+  verify:
+    runs-on: ubuntu-latest
+    needs: [deploy]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    steps:
+      - name: Verify deployed endpoint
+        run: |
+          curl --fail --show-error --silent \
+            "http://212.192.134.135:60080/${{ secrets.DEPLOY_USERNAME }}/users/"
