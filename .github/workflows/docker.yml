@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 env:
-  IMAGE_NAME: administration-app:test
+  IMAGE_NAME: "administration-app:test"
 
 jobs:
   build:
@@ -21,7 +21,8 @@ jobs:
         run: docker build -t "$IMAGE_NAME" ./docker
 
       - name: Save Docker image artifact
-        run: docker save "$IMAGE_NAME" | gzip > administration-app.tar.gz
+        run: |
+          docker save "$IMAGE_NAME" | gzip > administration-app.tar.gz
 
       - name: Upload Docker image artifact
         uses: actions/upload-artifact@v4
@@ -43,7 +44,8 @@ jobs:
           name: administration-app-image
 
       - name: Load Docker image
-        run: gunzip -c administration-app.tar.gz | docker load
+        run: |
+          gunzip -c administration-app.tar.gz | docker load
 
       - name: Start PostgreSQL
         env:
@@ -53,7 +55,7 @@ jobs:
       - name: Run tests inside the built image
         env:
           APP_IMAGE: ${{ env.IMAGE_NAME }}
-          DATABASE_URL: postgresql+psycopg://kubsu:kubsu@postgres:5432/kubsu
+          DATABASE_URL: "postgresql+psycopg://kubsu:kubsu@postgres:5432/kubsu"
         run: docker compose -f docker/compose.yaml run --rm -e DATABASE_URL="$DATABASE_URL" app pytest tests -q
 
       - name: Tear down CI containers
