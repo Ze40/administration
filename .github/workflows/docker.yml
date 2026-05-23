@@ -75,7 +75,7 @@ jobs:
         with:
           host: ${{ secrets.DEPLOY_SSH_HOST }}
           username: ${{ secrets.DEPLOY_SSH_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          password: ${{ secrets.DEPLOY_SSH_PASSWORD }}
           source: "docker"
           target: ${{ secrets.DEPLOY_PATH }}
           overwrite: true
@@ -86,7 +86,7 @@ jobs:
         with:
           host: ${{ secrets.DEPLOY_SSH_HOST }}
           username: ${{ secrets.DEPLOY_SSH_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          password: ${{ secrets.DEPLOY_SSH_PASSWORD }}
           script: |
             set -eu
             cd "${{ secrets.DEPLOY_PATH }}/docker"
